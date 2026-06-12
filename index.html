@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>달과 바다 — 웹 전자책 샘플</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1d2433;          /* 본문 잉크 */
+    --paper:#faf6ee;        /* 종이 */
+    --paper-edge:#e9e2d2;   /* 종이 가장자리 */
+    --night:#16213e;        /* 뷰어 배경(밤바다) */
+    --night-deep:#0f1729;
+    --tide:#3d7ea6;         /* 바다 포인트 */
+    --moon:#f2c14e;         /* 달 포인트 */
+    --chrome:#e8eaf0;       /* 툴바 글자 */
+    font-size:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    font-family:'Noto Sans KR',sans-serif;
+    background:radial-gradient(120% 90% at 50% 0%, var(--night) 0%, var(--night-deep) 70%);
+    color:var(--chrome);
+    overflow:hidden;
+    display:flex;flex-direction:column;
+    -webkit-user-select:none;user-select:none;
+  }
+
+  /* ───────── 상단 바 ───────── */
+  header{
+    flex:0 0 auto;
+    display:flex;align-items:center;gap:12px;
+    padding:10px 16px;
+    background:rgba(15,23,41,.55);
+    backdrop-filter:blur(6px);
+    border-bottom:1px solid rgba(255,255,255,.08);
+    z-index:40;
+  }
+  header .title{
+    font-family:'Noto Serif KR',serif;font-weight:600;font-size:.95rem;
+    letter-spacing:.06em;
+  }
+  header .title small{opacity:.55;font-family:'Noto Sans KR';font-weight:300;margin-left:8px;font-size:.75rem;}
+  header .spacer{flex:1;}
+  .icon-btn{
+    appearance:none;border:0;background:transparent;color:var(--chrome);
+    width:36px;height:36px;border-radius:8px;cursor:pointer;
+    display:grid;place-items:center;font-size:1rem;
+    transition:background .15s;
+  }
+  .icon-btn:hover{background:rgba(255,255,255,.1);}
+  .icon-btn:focus-visible{outline:2px solid var(--moon);outline-offset:1px;}
+  .icon-btn[aria-pressed="true"]{background:rgba(242,193,78,.18);color:var(--moon);}
+  .icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;}
+
+  /* ───────── 무대 ───────── */
+  #stage{
+    flex:1 1 auto;position:relative;overflow:hidden;
+    touch-action:none;
+  }
+  #panZoom{
+    position:absolute;inset:0;
+    display:grid;place-items:center;
+    transition:transform .25s ease;
+    will-change:transform;
+  }
+  #panZoom.dragging{transition:none;cursor:grabbing;}
+
+  /* ───────── 책 ───────── */
+  #bookScaler{transform-origin:center center;}
+  #book{
+    position:relative;
+    width:920px;height:640px;       /* 두 쪽 펼침 기준 */
+    perspective:2600px;
+    filter:drop-shadow(0 26px 40px rgba(0,0,0,.5));
+  }
+  /* 표지 아래 책 두께 표현 */
+  #book::before{
+    content:"";position:absolute;left:50%;top:6px;bottom:6px;width:49.5%;
+    transform:translateX(2px);
+    background:repeating-linear-gradient(90deg,#d8d0bd 0 1px,#efe9da 1px 3px);
+    border-radius:0 4px 4px 0;
+  }
+  #book::after{
+    content:"";position:absolute;right:50%;top:6px;bottom:6px;width:49.5%;
+    transform:translateX(-2px);
+    background:repeating-linear-gradient(90deg,#efe9da 0 2px,#d8d0bd 2px 3px);
+    border-radius:4px 0 0 4px;
+  }
+  .leaf{
+    position:absolute;left:50%;top:0;width:50%;height:100%;
+    transform-origin:left center;
+    transform-style:preserve-3d;
+    transition:transform .85s cubic-bezier(.38,.09,.21,1);
+    z-index:1;
+  }
+  .leaf.flipped{transform:rotateY(-180deg);}
+  .leaf.no-anim{transition:none;}
+  .face{
+    position:absolute;inset:0;overflow:hidden;
+    backface-visibility:hidden;-webkit-backface-visibility:hidden;
+    background:var(--paper);
+  }
+  .face.back{transform:rotateY(180deg);}
+  /* 책등 음영 — 종이 굴곡 표현 */
+  .face.front::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(90deg,rgba(0,0,0,.14),rgba(0,0,0,0) 9%,rgba(255,255,255,0) 91%,rgba(0,0,0,.05));
+  }
+  .face.back::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(90deg,rgba(0,0,0,.05),rgba(0,0,0,0) 9%,rgba(0,0,0,0) 91%,rgba(0,0,0,.14));
+  }
+  /* 넘기는 동안 종이 뒷면 비침 */
+  .leaf.turning .face{box-shadow:0 0 36px rgba(0,0,0,.25) inset;}
+
+  /* 좌/우 클릭 핫존 */
+  .hotzone{
+    position:absolute;top:0;height:100%;width:11%;z-index:30;cursor:pointer;
+    display:grid;place-items:center;color:transparent;
+  }
+  .hotzone:hover{color:rgba(255,255,255,.65);}
+  #zonePrev{left:0;} #zoneNext{right:0;}
+  .hotzone svg{width:34px;height:34px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;transition:color .2s;}
+
+  /* ───────── 페이지 공통 디자인 ───────── */
+  .page{
+    width:100%;height:100%;
+    color:var(--ink);
+    font-family:'Noto Sans KR',sans-serif;
+    padding:52px 48px;
+    display:flex;flex-direction:column;
+    background:
+      radial-gradient(140% 100% at 50% 0%,rgba(255,255,255,.5),rgba(255,255,255,0) 60%),
+      var(--paper);
+    position:relative;
+  }
+  .page .folio{
+    position:absolute;bottom:22px;font-size:.68rem;letter-spacing:.22em;color:#9a937f;
+  }
+  .page .folio.left{left:44px;} .page .folio.right{right:44px;}
+  .eyebrow{
+    font-size:.66rem;letter-spacing:.34em;color:var(--tide);
+    margin-bottom:14px;font-weight:500;
+  }
+  h2.display{
+    font-family:'Noto Serif KR',serif;font-weight:700;
+    font-size:1.9rem;line-height:1.32;letter-spacing:-.01em;margin-bottom:18px;
+  }
+  .body-text{font-weight:300;font-size:.84rem;line-height:1.95;color:#3a4150;text-align:justify;word-break:keep-all;}
+  .body-text + .body-text{margin-top:12px;}
+  .caption{font-size:.68rem;color:#8b8470;letter-spacing:.06em;margin-top:10px;}
+  .rule{height:1px;background:linear-gradient(90deg,var(--paper-edge),transparent);margin:20px 0;}
+  .fig{border-radius:6px;overflow:hidden;line-height:0;box-shadow:0 8px 22px rgba(29,36,51,.12);}
+  .fig svg{width:100%;height:auto;}
+
+  /* 표지 */
+  .page.cover{
+    background:linear-gradient(165deg,#1c2a4d 0%,#16213e 55%,#101a33 100%);
+    color:var(--paper);align-items:center;justify-content:center;text-align:center;
+  }
+  .cover .moon-art{width:230px;margin-bottom:34px;}
+  .cover h1{
+    font-family:'Noto Serif KR',serif;font-weight:700;font-size:2.7rem;
+    letter-spacing:.32em;text-indent:.32em;margin-bottom:14px;
+  }
+  .cover .sub{font-weight:300;font-size:.8rem;letter-spacing:.42em;text-indent:.42em;color:#aebadb;}
+  .cover .issue{
+    margin-top:46px;font-size:.62rem;letter-spacing:.3em;color:#6f7da6;
+    border:1px solid #2c3a61;padding:7px 18px;border-radius:999px;
+  }
+  .page.backcover{
+    background:linear-gradient(15deg,#1c2a4d 0%,#16213e 60%,#101a33 100%);
+    color:#aebadb;align-items:center;justify-content:center;text-align:center;gap:18px;
+  }
+  .backcover .mark{font-family:'Noto Serif KR',serif;font-size:1.1rem;letter-spacing:.5em;text-indent:.5em;color:var(--paper);}
+  .backcover p{font-size:.7rem;font-weight:300;letter-spacing:.14em;line-height:2;}
+
+  /* 차례 */
+  .toc{list-style:none;margin-top:8px;}
+  .toc li{
+    display:flex;align-items:baseline;gap:14px;
+    padding:13px 0;border-bottom:1px dashed var(--paper-edge);
+    font-size:.86rem;
+  }
+  .toc .no{font-family:'Noto Serif KR',serif;color:var(--tide);font-size:.78rem;width:24px;}
+  .toc .dots{flex:1;border-bottom:1px dotted #cfc8b4;transform:translateY(-4px);}
+  .toc .pg{font-size:.72rem;color:#9a937f;letter-spacing:.1em;}
+
+  /* 인용 페이지 */
+  .quote-block{
+    margin:auto 0;
+    font-family:'Noto Serif KR',serif;font-size:1.28rem;line-height:2.05;
+    color:#27314a;word-break:keep-all;
+  }
+  .quote-block::before{content:"“";display:block;font-size:3rem;color:var(--moon);line-height:1;margin-bottom:6px;}
+  .quote-src{margin-top:18px;font-family:'Noto Sans KR';font-size:.7rem;letter-spacing:.2em;color:#9a937f;}
+
+  /* 체크리스트 */
+  .check{list-style:none;margin-top:6px;}
+  .check li{
+    position:relative;padding:10px 0 10px 30px;font-size:.82rem;font-weight:300;color:#3a4150;
+    border-bottom:1px solid #f0ebdd;
+  }
+  .check li::before{
+    content:"";position:absolute;left:2px;top:13px;width:14px;height:14px;
+    border:1.5px solid var(--tide);border-radius:4px;
+  }
+  .check li.done::before{background:var(--tide);}
+  .check li.done::after{
+    content:"";position:absolute;left:5.5px;top:16px;width:7px;height:4px;
+    border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg);
+  }
+
+  /* ───────── 하단 바 ───────── */
+  footer{
+    flex:0 0 auto;
+    display:flex;align-items:center;gap:6px;
+    padding:8px 14px;
+    background:rgba(15,23,41,.55);backdrop-filter:blur(6px);
+    border-top:1px solid rgba(255,255,255,.08);
+    z-index:40;
+  }
+  #pageInfo{
+    font-variant-numeric:tabular-nums;font-size:.74rem;letter-spacing:.12em;
+    min-width:84px;text-align:center;color:#aebadb;
+  }
+  #seek{
+    flex:1;appearance:none;height:3px;border-radius:2px;background:rgba(255,255,255,.18);
+    outline:none;cursor:pointer;
+  }
+  #seek::-webkit-slider-thumb{
+    appearance:none;width:14px;height:14px;border-radius:50%;
+    background:var(--moon);box-shadow:0 0 0 4px rgba(242,193,78,.2);
+  }
+  #seek::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--moon);border:0;}
+
+  /* ───────── 썸네일 드로어 ───────── */
+  #thumbDrawer{
+    position:absolute;left:0;right:0;bottom:0;z-index:35;
+    background:rgba(13,20,38,.92);backdrop-filter:blur(10px);
+    border-top:1px solid rgba(255,255,255,.1);
+    padding:14px 16px 16px;
+    transform:translateY(100%);transition:transform .3s ease;
+  }
+  #thumbDrawer.open{transform:translateY(0);}
+  #thumbDrawer .label{font-size:.66rem;letter-spacing:.3em;color:#6f7da6;margin-bottom:10px;}
+  #thumbStrip{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;}
+  .thumb{
+    flex:0 0 auto;width:74px;cursor:pointer;border:0;background:transparent;padding:0;
+  }
+  .thumb .frame{
+    width:74px;height:103px;border-radius:4px;overflow:hidden;position:relative;
+    outline:2px solid transparent;outline-offset:2px;transition:outline-color .2s;
+    background:var(--paper);
+  }
+  .thumb.active .frame{outline-color:var(--moon);}
+  .thumb .mini{
+    width:460px;height:640px;transform:scale(0.1609);transform-origin:top left;pointer-events:none;
+  }
+  .thumb .num{font-size:.62rem;color:#8a97c0;margin-top:6px;text-align:center;letter-spacing:.1em;}
+
+  /* 로딩 인트로 */
+  #intro{
+    position:fixed;inset:0;z-index:100;display:grid;place-items:center;
+    background:var(--night-deep);transition:opacity .5s;}
+  #intro.hide{opacity:0;pointer-events:none;}
+  #intro .ring{
+    width:46px;height:46px;border-radius:50%;
+    border:2px solid rgba(242,193,78,.25);border-top-color:var(--moon);
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  @media (prefers-reduced-motion:reduce){
+    .leaf{transition:none;}
+    #panZoom{transition:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="intro" aria-hidden="true"><div class="ring"></div></div>
+
+<header>
+  <span class="title">달과 바다 <small>제주 여행 소책자 · 웹 전자책 데모</small></span>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="btnThumbs" title="페이지 목록" aria-label="페이지 목록">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="1"/><rect x="14" y="4" width="7" height="16" rx="1"/></svg>
+  </button>
+  <button class="icon-btn" id="btnZoomOut" title="축소" aria-label="축소">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+  </button>
+  <button class="icon-btn" id="btnZoomIn" title="확대" aria-label="확대">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg>
+  </button>
+  <button class="icon-btn" id="btnSound" title="넘김 효과음" aria-label="넘김 효과음" aria-pressed="true">
+    <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/></svg>
+  </button>
+  <button class="icon-btn" id="btnFull" title="전체화면" aria-label="전체화면">
+    <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+  </button>
+</header>
+
+<div id="stage">
+  <div id="panZoom">
+    <div id="bookScaler">
+      <div id="book" aria-label="전자책 본문"></div>
+    </div>
+  </div>
+
+  <button class="hotzone" id="zonePrev" aria-label="이전 페이지">
+    <svg viewBox="0 0 24 24"><polyline points="15 5 8 12 15 19"/></svg>
+  </button>
+  <button class="hotzone" id="zoneNext" aria-label="다음 페이지">
+    <svg viewBox="0 0 24 24"><polyline points="9 5 16 12 9 19"/></svg>
+  </button>
+
+  <div id="thumbDrawer">
+    <div class="label">PAGES</div>
+    <div id="thumbStrip"></div>
+  </div>
+</div>
+
+<footer>
+  <span id="pageInfo">1 / 8</span>
+  <input type="range" id="seek" min="0" max="4" step="1" value="0" aria-label="페이지 이동">
+</footer>
+
+<script>
+/* ──────────────────────────────────────────────
+   페이지 콘텐츠 (HTML 템플릿)
+   실제 솔루션에서는 PDF→JPG/SVG 변환 결과를 넣는 자리
+─────────────────────────────────────────────── */
+const moonArt = `
+<svg viewBox="0 0 240 160" xmlns="http://www.w3.org/2000/svg" class="moon-art" aria-hidden="true">
+  <circle cx="120" cy="58" r="34" fill="#f2c14e"/>
+  <circle cx="132" cy="50" r="34" fill="#1c2a4d"/>
+  <g stroke="#3d7ea6" stroke-width="2.4" fill="none" stroke-linecap="round">
+    <path d="M20 116 q14 -10 28 0 t28 0 t28 0 t28 0 t28 0 t28 0 t28 0"/>
+    <path d="M34 132 q14 -8 28 0 t28 0 t28 0 t28 0 t28 0 t28 0" opacity=".55"/>
+    <path d="M20 148 q14 -6 28 0 t28 0 t28 0 t28 0 t28 0 t28 0 t28 0" opacity=".3"/>
+  </g>
+  <g fill="#aebadb"><circle cx="46" cy="30" r="1.6"/><circle cx="196" cy="22" r="1.3"/><circle cx="174" cy="84" r="1.5"/><circle cx="70" cy="70" r="1.2"/></g>
+</svg>`;
+
+const seaFig = `
+<svg viewBox="0 0 380 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="협재 바다 일러스트">
+  <rect width="380" height="230" fill="#dceef4"/>
+  <rect y="118" width="380" height="112" fill="#79b8d1"/>
+  <rect y="118" width="380" height="44" fill="#5ea4c4"/>
+  <circle cx="306" cy="52" r="26" fill="#f2c14e"/>
+  <path d="M0 178 q40 -14 80 0 t80 0 t80 0 t80 0 t60 0 V230 H0 Z" fill="#3d7ea6"/>
+  <path d="M0 204 q48 -10 96 0 t96 0 t96 0 t92 0 V230 H0 Z" fill="#2d6285"/>
+  <path d="M-10 230 q60 -34 130 -22 q60 10 120 -6 q80 -20 150 6 V230 Z" fill="#f3e9cf"/>
+  <ellipse cx="64" cy="124" rx="36" ry="9" fill="#1d2433" opacity=".85"/>
+  <path d="M44 124 l8 -16 l24 0 l6 16 Z" fill="#1d2433" opacity=".85"/>
+</svg>`;
+
+const oreumFig = `
+<svg viewBox="0 0 380 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="오름 능선 일러스트">
+  <rect width="380" height="230" fill="#fdf3e0"/>
+  <circle cx="84" cy="62" r="24" fill="#f2c14e" opacity=".9"/>
+  <path d="M0 158 Q70 96 150 130 T380 118 V230 H0 Z" fill="#9bb88a"/>
+  <path d="M0 186 Q90 134 190 162 T380 156 V230 H0 Z" fill="#6f9e6b"/>
+  <path d="M0 212 Q110 176 220 198 T380 196 V230 H0 Z" fill="#48774f"/>
+  <g stroke="#fdf3e0" stroke-width="1.6" fill="none" opacity=".7">
+    <path d="M120 150 q10 -8 20 0"/><path d="M250 142 q10 -8 20 0"/>
+  </g>
+</svg>`;
+
+const marketFig = `
+<svg viewBox="0 0 380 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="시장 천막 일러스트">
+  <rect width="380" height="150" fill="#fbeede"/>
+  <g>
+    <path d="M30 56 h90 l-10 26 h-70 Z" fill="#e2745a"/>
+    <rect x="38" y="82" width="74" height="44" fill="#fff" opacity=".7"/>
+    <path d="M150 56 h90 l-10 26 h-70 Z" fill="#3d7ea6"/>
+    <rect x="158" y="82" width="74" height="44" fill="#fff" opacity=".7"/>
+    <path d="M270 56 h90 l-10 26 h-70 Z" fill="#e8b04b"/>
+    <rect x="278" y="82" width="74" height="44" fill="#fff" opacity=".7"/>
+  </g>
+  <g fill="#c2552f"><circle cx="58" cy="112" r="7"/><circle cx="76" cy="112" r="7"/><circle cx="94" cy="112" r="7"/></g>
+  <g fill="#3d7ea6"><rect x="172" y="104" width="12" height="18" rx="2"/><rect x="190" y="100" width="12" height="22" rx="2"/><rect x="208" y="106" width="12" height="16" rx="2"/></g>
+  <g fill="#e8b04b"><circle cx="296" cy="110" r="8"/><circle cx="316" cy="110" r="8"/><circle cx="336" cy="110" r="8"/></g>
+</svg>`;
+
+const pages = [
+/* 1 표지 */ `
+<div class="page cover">
+  ${moonArt}
+  <h1>달과 바다</h1>
+  <div class="sub">제주 여행 소책자</div>
+  <div class="issue">SAMPLE EDITION · 2026</div>
+</div>`,
+/* 2 차례 */ `
+<div class="page">
+  <div class="eyebrow">CONTENTS</div>
+  <h2 class="display">차례</h2>
+  <ul class="toc">
+    <li><span class="no">一</span><span>협재, 물빛을 읽는 법</span><span class="dots"></span><span class="pg">03</span></li>
+    <li><span class="no">二</span><span>바다가 남긴 문장</span><span class="dots"></span><span class="pg">04</span></li>
+    <li><span class="no">三</span><span>오름, 바람의 등고선</span><span class="dots"></span><span class="pg">05</span></li>
+    <li><span class="no">四</span><span>오일장의 색</span><span class="dots"></span><span class="pg">06</span></li>
+    <li><span class="no">五</span><span>떠나기 전 점검</span><span class="dots"></span><span class="pg">07</span></li>
+  </ul>
+  <div class="rule"></div>
+  <p class="body-text">이 책자는 웹 전자책 뷰어 데모를 위해 만든 샘플 콘텐츠입니다. 좌우 화살표, 키보드, 스와이프, 하단 슬라이더로 책장을 넘길 수 있습니다.</p>
+  <span class="folio left">02 · 달과 바다</span>
+</div>`,
+/* 3 협재 */ `
+<div class="page">
+  <div class="eyebrow">CHAPTER ONE</div>
+  <h2 class="display">협재,<br>물빛을 읽는 법</h2>
+  <p class="body-text">협재의 바다는 하루에도 몇 번씩 색을 바꾼다. 아침에는 옅은 청록이었다가, 해가 높아지면 비양도 앞까지 에메랄드가 번지고, 해질녘에는 짙은 쪽빛으로 가라앉는다.</p>
+  <p class="body-text">물빛을 읽으려면 모래를 먼저 보아야 한다. 잘게 부서진 조개껍데기가 섞인 흰 모래가 얕은 물을 통과한 빛을 되돌려 보내는 동안에만, 그 유명한 빛깔이 만들어진다.</p>
+  <span class="folio left">03 · 달과 바다</span>
+</div>`,
+/* 4 바다 그림 + 인용 */ `
+<div class="page">
+  <div class="fig">${seaFig}</div>
+  <p class="caption">협재 해수욕장에서 바라본 비양도, 오후 세 시.</p>
+  <div class="quote-block">바다는 매일 같은 자리에서<br>다른 문장을 쓴다.</div>
+  <div class="quote-src">— 여행 노트에서</div>
+  <span class="folio right">달과 바다 · 04</span>
+</div>`,
+/* 5 오름 */ `
+<div class="page">
+  <div class="eyebrow">CHAPTER THREE</div>
+  <h2 class="display">오름,<br>바람의 등고선</h2>
+  <div class="fig">${oreumFig}</div>
+  <p class="caption">용눈이오름의 능선, 이른 아침.</p>
+  <p class="body-text" style="margin-top:14px">오름의 능선은 바람이 수만 년에 걸쳐 그린 등고선이다. 정상까지는 보통 이십 분, 그러나 능선에 올라서는 순간 시간의 단위가 달라진다.</p>
+  <span class="folio left">05 · 달과 바다</span>
+</div>`,
+/* 6 오일장 */ `
+<div class="page">
+  <div class="eyebrow">CHAPTER FOUR</div>
+  <h2 class="display">오일장의 색</h2>
+  <div class="fig">${marketFig}</div>
+  <p class="caption">세화 오일장, 끝자리 0·5일에 열린다.</p>
+  <p class="body-text" style="margin-top:14px">시장의 색은 계절의 색이다. 봄에는 고사리의 갈색과 톳의 검은빛, 여름에는 한치의 투명함, 가을에는 감귤이 노랗게 좌판을 덮는다. 천막 아래에서 계절은 가장 정직하게 진열된다.</p>
+  <span class="folio right">달과 바다 · 06</span>
+</div>`,
+/* 7 체크리스트 */ `
+<div class="page">
+  <div class="eyebrow">BEFORE YOU GO</div>
+  <h2 class="display">떠나기 전 점검</h2>
+  <ul class="check">
+    <li class="done">물때표 확인 — 협재는 간조 두 시간 전후가 가장 맑다</li>
+    <li class="done">오일장 날짜 확인 — 세화 0·5일, 함덕 1·6일</li>
+    <li>오름용 바람막이 — 능선의 바람은 한 계절 앞서간다</li>
+    <li>일몰 시각 메모 — 서쪽 해안 기준</li>
+    <li>젖은 신발을 위한 여분 양말</li>
+  </ul>
+  <div class="rule"></div>
+  <p class="body-text">체크박스는 인쇄용 표시입니다. 실제 솔루션에서는 메모·필기 플러그인으로 직접 기록할 수 있습니다.</p>
+  <span class="folio left">07 · 달과 바다</span>
+</div>`,
+/* 8 뒤표지 */ `
+<div class="page backcover">
+  <div class="mark">달과 바다</div>
+  <p>웹 전자책 뷰어 데모 · 단일 HTML 파일<br>CSS 3D 페이지 플립 · 외부 라이브러리 없음</p>
+</div>`
+];
+
+/* ──────────────────────────────────────────────
+   플립북 엔진
+─────────────────────────────────────────────── */
+const book = document.getElementById('book');
+const totalPages = pages.length;            // 짝수 가정
+const totalLeaves = totalPages / 2;
+let spread = 0;                              // 넘어간 잎 수 (0~totalLeaves)
+let busy = false;
+
+const leaves = [];
+for(let k = 0; k < totalLeaves; k++){
+  const leaf = document.createElement('div');
+  leaf.className = 'leaf';
+  leaf.innerHTML =
+    `<div class="face front">${pages[2*k]}</div>` +
+    `<div class="face back">${pages[2*k+1]}</div>`;
+  book.appendChild(leaf);
+  leaves.push(leaf);
+}
+function applyZ(activeK = -1){
+  leaves.forEach((leaf,k)=>{
+    leaf.style.zIndex = (k===activeK) ? totalLeaves+2
+      : leaf.classList.contains('flipped') ? k+1 : totalLeaves-k;
+  });
+}
+function render(animK = -1){
+  leaves.forEach((leaf,k)=> leaf.classList.toggle('flipped', k < spread));
+  applyZ(animK);
+  const cur = spread===0 ? 1 : (spread===totalLeaves ? totalPages : 2*spread);
+  const label = spread===0 ? '1' : (spread===totalLeaves ? String(totalPages) : `${2*spread}–${2*spread+1}`);
+  document.getElementById('pageInfo').textContent = `${label} / ${totalPages}`;
+  document.getElementById('seek').value = spread;
+  document.querySelectorAll('.thumb').forEach((t,i)=>{
+    const k = Math.floor((i+1)/2);
+    t.classList.toggle('active', k===spread || (i===0&&spread===0));
+  });
+}
+function go(dir){
+  if(busy) return;
+  const next = spread + dir;
+  if(next < 0 || next > totalLeaves) return;
+  busy = true;
+  const k = dir>0 ? spread : spread-1;
+  spread = next;
+  const leaf = leaves[k];
+  leaf.classList.add('turning');
+  render(k);
+  playFlip();
+  setTimeout(()=>{ leaf.classList.remove('turning'); applyZ(); busy=false; }, 870);
+}
+function jumpTo(s){
+  if(busy || s===spread) return;
+  spread = Math.max(0, Math.min(totalLeaves, s));
+  leaves.forEach(l=>l.classList.add('no-anim'));
+  render();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>leaves.forEach(l=>l.classList.remove('no-anim'))));
+}
+
+/* ───────── 입력: 클릭·키보드·스와이프 ───────── */
+document.getElementById('zoneNext').addEventListener('click', ()=>go(1));
+document.getElementById('zonePrev').addEventListener('click', ()=>go(-1));
+addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight'||e.key==='PageDown') go(1);
+  if(e.key==='ArrowLeft' ||e.key==='PageUp')   go(-1);
+  if(e.key==='Home') jumpTo(0);
+  if(e.key==='End')  jumpTo(totalLeaves);
+});
+document.getElementById('seek').addEventListener('input', e=>jumpTo(+e.target.value));
+
+/* ───────── 확대/이동(팬·줌) ───────── */
+const panZoom = document.getElementById('panZoom');
+let zoom=1, px=0, py=0;
+function applyPZ(){ panZoom.style.transform = `translate(${px}px,${py}px) scale(${zoom})`; }
+function setZoom(z){
+  zoom = Math.max(1, Math.min(3, z));
+  if(zoom===1){ px=0; py=0; }
+  applyPZ();
+}
+document.getElementById('btnZoomIn').addEventListener('click', ()=>setZoom(zoom+0.25));
+document.getElementById('btnZoomOut').addEventListener('click', ()=>setZoom(zoom-0.25));
+
+let drag=null, swipe=null;
+const stage = document.getElementById('stage');
+stage.addEventListener('pointerdown', e=>{
+  if(e.target.closest('.hotzone,#thumbDrawer,button,input')) return;
+  if(zoom>1){ drag={x:e.clientX-px, y:e.clientY-py}; panZoom.classList.add('dragging'); }
+  else swipe={x:e.clientX, t:Date.now()};
+});
+stage.addEventListener('pointermove', e=>{
+  if(drag){ px=e.clientX-drag.x; py=e.clientY-drag.y; applyPZ(); }
+});
+stage.addEventListener('pointerup', e=>{
+  if(drag){ drag=null; panZoom.classList.remove('dragging'); return; }
+  if(swipe){
+    const dx = e.clientX - swipe.x;
+    if(Math.abs(dx)>48 && Date.now()-swipe.t<600) go(dx<0?1:-1);
+    swipe=null;
+  }
+});
+stage.addEventListener('wheel', e=>{
+  if(e.ctrlKey){ e.preventDefault(); setZoom(zoom - Math.sign(e.deltaY)*0.2); }
+},{passive:false});
+
+/* ───────── 전체화면 ───────── */
+document.getElementById('btnFull').addEventListener('click', ()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+});
+
+/* ───────── 썸네일 ───────── */
+const drawer = document.getElementById('thumbDrawer');
+const strip  = document.getElementById('thumbStrip');
+pages.forEach((html,i)=>{
+  const b = document.createElement('button');
+  b.className='thumb';
+  b.setAttribute('aria-label', `${i+1}쪽으로 이동`);
+  b.innerHTML = `<div class="frame"><div class="mini">${html}</div></div><div class="num">${String(i+1).padStart(2,'0')}</div>`;
+  b.addEventListener('click', ()=>{ jumpTo(Math.round(i/2)); });
+  strip.appendChild(b);
+});
+document.getElementById('btnThumbs').addEventListener('click', e=>{
+  const open = drawer.classList.toggle('open');
+  e.currentTarget.setAttribute('aria-pressed', open);
+});
+
+/* ───────── 넘김 효과음 (Web Audio 합성) ───────── */
+let soundOn = true, actx = null;
+document.getElementById('btnSound').addEventListener('click', e=>{
+  soundOn = !soundOn;
+  e.currentTarget.setAttribute('aria-pressed', soundOn);
+});
+function playFlip(){
+  if(!soundOn) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const dur=0.22, sr=actx.sampleRate;
+    const buf=actx.createBuffer(1, sr*dur, sr), d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++){
+      const t=i/d.length;
+      d[i]=(Math.random()*2-1)*Math.pow(1-t,2.2)*(0.25+0.75*Math.sin(t*Math.PI));
+    }
+    const src=actx.createBufferSource(); src.buffer=buf;
+    const f=actx.createBiquadFilter(); f.type='bandpass';
+    f.frequency.setValueAtTime(900,actx.currentTime);
+    f.frequency.exponentialRampToValueAtTime(2600,actx.currentTime+dur*0.6);
+    const g=actx.createGain(); g.gain.value=0.5;
+    src.connect(f).connect(g).connect(actx.destination); src.start();
+  }catch(_){}
+}
+
+/* ───────── 반응형 스케일 ───────── */
+function fit(){
+  const pad=36;
+  const w=stage.clientWidth-pad*2, h=stage.clientHeight-pad*2;
+  const s=Math.min(w/920, h/640, 1.15);
+  document.getElementById('bookScaler').style.transform=`scale(${s})`;
+  document.getElementById('bookScaler').style.width='920px';
+  document.getElementById('bookScaler').style.height='640px';
+}
+addEventListener('resize', fit);
+
+/* ───────── 시작 ───────── */
+render(); fit();
+addEventListener('load', ()=> setTimeout(()=>document.getElementById('intro').classList.add('hide'), 350));
+</script>
+</body>
+</html>
